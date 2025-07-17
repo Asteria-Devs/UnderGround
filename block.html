@@ -49,10 +49,6 @@
       display: grid;
       gap: 2px;
       cursor: grab;
-      padding: 4px;
-      background: #111;
-      border: 1px solid #555;
-      border-radius: 4px;
     }
     .block {
       width: 20px;
@@ -119,7 +115,6 @@
         draggedShape = null;
         currentPieceElement = null;
         clearPreview();
-        // If not placed, restore piece
         if (!div.parentElement && usedPieces < 3) {
           piecesContainer.appendChild(div);
         }
