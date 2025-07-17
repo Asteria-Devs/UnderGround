@@ -432,9 +432,9 @@
 
       // HP bar above god
       ctx.fillStyle = "grey";
-      ctx.fillRect(god.x - 30, god.y - god.radius - 10, 30, 6);
+      ctx.fillRect(god.x - 15, god.y - god.radius - 5, 15, 6);
       ctx.fillStyle = god.color;
-      ctx.fillRect(god.x - 30, god.y - god.radius - 10, 30 * god.hp / 1000, 6);
+      ctx.fillRect(god.x - 15, god.y - god.radius - 5, 15 * god.hp / 1000, 6);
 
       if (god.invincible) {
         ctx.strokeStyle = "yellow";
