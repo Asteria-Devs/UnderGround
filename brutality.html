@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Gods Dot Fighting - Wrath of the Ancients</title>
+  <style>
+    html, body {
+      margin: 0; padding: 0; overflow: hidden; background: black;
+      user-select: none;
+      -webkit-user-select: none;
+      -moz-user-select: none;
+      -ms-user-select: none;
+    }
+    canvas {
+      display: block;
+      background: #000;
+      position: fixed;
+      top: 0; left: 0; width: 100%; height: 100%;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="game"></canvas>
+  <script>
+    const canvas = document.getElementById("game");
+    const ctx = canvas.getContext("2d");
+
+    function resize() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+    window.addEventListener("resize", resize);
+    resize();
+
+    // Input state
+    const keys = {};
+    const mouse = { x: 0, y: 0, left: false, right: false };
+    window.addEventListener("keydown", e => keys[e.key.toLowerCase()] = true);
+    window.addEventListener("keyup", e => keys[e.key.toLowerCase()] = false);
+    window.addEventListener("mousedown", e => {
+      if (e.button === 0) mouse.left = true;
+      if (e.button === 2) mouse.right = true;
+    });
+    window.addEventListener("mouseup", e => {
+      if (e.button === 0) mouse.left = false;
+      if (e.button === 2) mouse.right = false;
+    });
+    window.addEventListener("contextmenu", e => e.preventDefault());
+    window.addEventListener("mousemove", e => {
+      mouse.x = e.clientX;
+      mouse.y = e.clientY;
+    });
+
+    // Game constants - Increased for speed
+    const PLAYER_SPEED = 12;
+    const DASH_DISTANCE = 300;
+    const DASH_FRAMES = 5;
+    const PROJECTILE_SPEED = 20;
+    const BEAM_LENGTH = 400;
+    const BEAM_WIDTH = 8;
+
+    // Helper functions
+    function clamp(v, min, max) {
+      return Math.min(Math.max(v, min), max);
+    }
+
+    // AI playstyles
+    const AI_PLAYSTYLES = {
+      DEFENSIVE: "defensive",
+      AGGRESSIVE: "aggressive"
+    };
+
+    // Entities
+    const player = {
+      x: canvas.width / 4,
+      y: canvas.height / 2,
+      radius: 20,
+      color: "cyan",
+      speed: PLAYER_SPEED,
+      dx: 0,
+      dy: 0,
+      dashCooldown: 0,
+      dashFramesRemaining: 0,
+      dashSpeed: DASH_DISTANCE / DASH_FRAMES,
+      invincible: false,
+      hp: 10000,
+    };
+
+    const ai = {
+      x: (canvas.width / 4) * 3,
+      y: canvas.height / 2,
+      radius: 20,
+      color: "red",
+      speed: 9,
+      dx: 0,
+      dy: 0,
+      dashCooldown: 0,
+      dashFramesRemaining: 0,
+      dashSpeed: DASH_DISTANCE / DASH_FRAMES,
+      invincible: false,
+      hp: 10000,
+      playstyle: AI_PLAYSTYLES.DEFENSIVE,
+      beamCooldown: 0,
+      projectileCooldown: 0,
+      dashCooldown: 0,
+      dashFramesRemaining: 0,
+    };
+
+    // Projectiles & beams
+    const projectiles = [];
+    const beams = [];
+
+    // Utility functions for collision and math
+
+    // Distance from point to line segment
+    function pointLineDistance(px, py, x1, y1, x2, y2) {
+      const A = px - x1;
+      const B = py - y1;
+      const C = x2 - x1;
+      const D = y2 - y1;
+
+      const dot = A * C + B * D;
+      const len_sq = C * C + D * D;
+      let param = -1;
+      if (len_sq !== 0) param = dot / len_sq;
+
+      let xx, yy;
+      if (param < 0) {
+        xx = x1;
+        yy = y1;
+      } else if (param > 1) {
+        xx = x2;
+        yy = y2;
+      } else {
+        xx = x1 + param * C;
+        yy = y1 + param * D;
+      }
+
+      const dx = px - xx;
+      const dy = py - yy;
+      return Math.sqrt(dx * dx + dy * dy);
+    }
+
+    function checkProjectileCollision(projectile, god) {
+      const dist = Math.hypot(projectile.x - god.x, projectile.y - god.y);
+      return dist < god.radius;
+    }
+
+    function checkBeamCollision(beam, god) {
+      const bx1 = beam.x;
+      const by1 = beam.y;
+      const bx2 = beam.x + Math.cos(beam.angle) * beam.length;
+      const by2 = beam.y + Math.sin(beam.angle) * beam.length;
+      const dist = pointLineDistance(god.x, god.y, bx1, by1, bx2, by2);
+      return dist < god.radius;
+    }
+
+    // Player movement
+    function movePlayer() {
+      let dx = 0, dy = 0;
+      if (keys["w"]) dy -= 1;
+      if (keys["s"]) dy += 1;
+      if (keys["a"]) dx -= 1;
+      if (keys["d"]) dx += 1;
+      const mag = Math.hypot(dx, dy);
+      if (mag > 0) {
+        dx /= mag;
+        dy /= mag;
+      }
+      player.dx = dx;
+      player.dy = dy;
+
+      if (player.dashFramesRemaining > 0) {
+        player.x += player.dx * player.dashSpeed;
+        player.y += player.dy * player.dashSpeed;
+        player.dashFramesRemaining--;
+        if (player.dashFramesRemaining === 0) player.invincible = false;
+      } else {
+        player.x += player.dx * player.speed;
+        player.y += player.dy * player.speed;
+        if (keys["f"] && player.dashCooldown <= 0 && mag > 0) {
+          startDash(player, player.dx, player.dy);
+        }
+      }
+
+      if (player.dashCooldown > 0) player.dashCooldown--;
+      clampPosition(player);
+    }
+
+    // AI functions
+
+    // Randomly switch AI playstyle every 5-10 seconds
+    let lastPlaystyleSwitch = 0;
+    function updateAIPlaystyle() {
+      const now = performance.now();
+      if (now - lastPlaystyleSwitch > 7000 + Math.random() * 5000) {
+        ai.playstyle = (Math.random() < 0.5) ? AI_PLAYSTYLES.DEFENSIVE : AI_PLAYSTYLES.AGGRESSIVE;
+        lastPlaystyleSwitch = now;
+      }
+    }
+
+    function startDash(god, dx, dy) {
+      const mag = Math.hypot(dx, dy);
+      if (mag === 0) return;
+      god.dx = dx / mag;
+      god.dy = dy / mag;
+      god.dashFramesRemaining = DASH_FRAMES;
+      god.invincible = true;
+      god.dashCooldown = 30;
+    }
+
+    // AI improved move function with dodging and attacking logic
+    function moveAI() {
+      updateAIPlaystyle();
+
+      if (ai.beamCooldown > 0) ai.beamCooldown--;
+      if (ai.projectileCooldown > 0) ai.projectileCooldown--;
+      if (ai.dashCooldown > 0) ai.dashCooldown--;
+
+      let dx = 0, dy = 0;
+      const diffX = player.x - ai.x;
+      const diffY = player.y - ai.y;
+      const dist = Math.hypot(diffX, diffY);
+
+      function isProjectileThreatening(proj) {
+        if (proj.owner === "player") {
+          const px = proj.x;
+          const py = proj.y;
+          const vx = Math.cos(proj.angle) * proj.speed;
+          const vy = Math.sin(proj.angle) * proj.speed;
+          const ax = ai.x - px;
+          const ay = ai.y - py;
+          const dot = ax * vx + ay * vy;
+          if (dot < 0) return false; 
+          const projDist = pointLineDistance(ai.x, ai.y, px, py, px + vx*10, py + vy*10);
+          return projDist < ai.radius + 20 && Math.hypot(ax, ay) < 300;
+        }
+        return false;
+      }
+
+      if (ai.playstyle === AI_PLAYSTYLES.DEFENSIVE) {
+        let dodgeVector = { x: 0, y: 0 };
+        let threatCount = 0;
+
+        for (const proj of projectiles) {
+          if (isProjectileThreatening(proj)) {
+            threatCount++;
+            const vx = Math.cos(proj.angle);
+            const vy = Math.sin(proj.angle);
+            let dodgeLeftX = -vy;
+            let dodgeLeftY = vx;
+            let dodgeRightX = vy;
+            let dodgeRightY = -vx;
+            const leftDist = Math.hypot(ai.x + dodgeLeftX*30 - player.x, ai.y + dodgeLeftY*30 - player.y);
+            const rightDist = Math.hypot(ai.x + dodgeRightX*30 - player.x, ai.y + dodgeRightY*30 - player.y);
+            if (leftDist > rightDist) {
+              dodgeVector.x += dodgeLeftX;
+              dodgeVector.y += dodgeLeftY;
+            } else {
+              dodgeVector.x += dodgeRightX;
+              dodgeVector.y += dodgeRightY;
+            }
+          }
+        }
+
+        if (threatCount > 0 && ai.dashCooldown <= 0) {
+          const mag = Math.hypot(dodgeVector.x, dodgeVector.y);
+          if (mag > 0) {
+            startDash(ai, dodgeVector.x / mag, dodgeVector.y / mag);
+          }
+        }
+
+        if (ai.dashFramesRemaining > 0) {
+          ai.x += ai.dx * ai.dashSpeed;
+          ai.y += ai.dy * ai.dashSpeed;
+          ai.dashFramesRemaining--;
+          if (ai.dashFramesRemaining === 0) ai.invincible = false;
+        } else {
+          if (threatCount === 0) {
+            if (dist < 250) {
+              dx = -diffX / dist;
+              dy = -diffY / dist;
+            } else {
+              dx = 0; dy = 0;
+            }
+            ai.x += dx * ai.speed;
+            ai.y += dy * ai.speed;
+          }
+        }
+
+        if (ai.projectileCooldown <= 0 && Math.random() < 0.05) {
+          shootAIProjectile();
+          ai.projectileCooldown = 20 + Math.random() * 40;
+        }
+        if (ai.beamCooldown <= 0 && Math.random() < 0.015) {
+          shootAIBeam();
+          ai.beamCooldown = 60 + Math.random() * 60;
+        }
+      } else if (ai.playstyle === AI_PLAYSTYLES.AGGRESSIVE) {
+        if (ai.dashFramesRemaining > 0) {
+          ai.x += ai.dx * ai.dashSpeed;
+          ai.y += ai.dy * ai.dashSpeed;
+          ai.dashFramesRemaining--;
+          if (ai.dashFramesRemaining === 0) ai.invincible = false;
+        } else {
+          if (dist > 50) {
+            dx = diffX / dist;
+            dy = diffY / dist;
+            ai.x += dx * ai.speed;
+            ai.y += dy * ai.speed;
+          }
+
+          if (ai.dashCooldown <= 0 && Math.random() < 0.04) {
+            startDash(ai, dx, dy);
+          }
+        }
+
+        if (ai.projectileCooldown <= 0) {
+          shootAIProjectile(true);
+          ai.projectileCooldown = 15 + Math.random() * 30;
+        }
+        if (ai.beamCooldown <= 0 && Math.random() < 0.04) {
+          shootAIBeam(true);
+          ai.beamCooldown = 40 + Math.random() * 40;
+        }
+      }
+
+      clampPosition(ai);
+    }
+
+    function shootPlayerProjectile() {
+      const angle = Math.atan2(mouse.y - player.y, mouse.x - player.x);
+      projectiles.push({
+        x: player.x + Math.cos(angle) * player.radius,
+        y: player.y + Math.sin(angle) * player.radius,
+        angle,
+        speed: PROJECTILE_SPEED,
+        color: "cyan",
+        owner: "player",
+      });
+    }
+
+    function shootAIProjectile(accurate = false) {
+      let angle = Math.atan2(player.y - ai.y, player.x - ai.x);
+      if (!accurate) {
+        angle += (Math.random() - 0.5) * 0.4;
+      } else {
+        angle += (Math.random() - 0.5) * 0.1;
+      }
+      projectiles.push({
+        x: ai.x + Math.cos(angle) * ai.radius,
+        y: ai.y + Math.sin(angle) * ai.radius,
+        angle,
+        speed: PROJECTILE_SPEED,
+        color: "red",
+        owner: "ai",
+      });
+    }
+
+    // Beam shooting
+    let playerBeamActive = false;
+    let playerBeam = null;
+
+    function shootAIBeam(accurate = false) {
+      let angle = Math.atan2(player.y - ai.y, player.x - ai.x);
+      if (!accurate) {
+        angle += (Math.random() - 0.5) * 0.4;
+      } else {
+        angle += (Math.random() - 0.5) * 0.1;
+      }
+      const beam = {
+        x: ai.x,
+        y: ai.y,
+        angle,
+        length: BEAM_LENGTH,
+        width: BEAM_WIDTH,
+        color: "red",
+        owner: "ai",
+        duration: 20,
+      };
+      beams.push(beam);
+    }
+
+    // Update projectiles
+    function updateProjectiles() {
+      for (let i = projectiles.length - 1; i >= 0; i--) {
+        const p = projectiles[i];
+        p.x += Math.cos(p.angle) * p.speed;
+        p.y += Math.sin(p.angle) * p.speed;
+
+        if (p.x < 0 || p.x > canvas.width || p.y < 0 || p.y > canvas.height) {
+          projectiles.splice(i, 1);
+          continue;
+        }
+
+        const target = (p.owner === "player") ? ai : player;
+        if (!target.invincible && checkProjectileCollision(p, target)) {
+          target.hp -= 20;
+          projectiles.splice(i, 1);
+        }
+      }
+    }
+
+    // Update beams and collision
+    function updateBeams() {
+      for (let i = beams.length - 1; i >= 0; i--) {
+        const b = beams[i];
+        b.duration--;
+        if (b.duration <= 0) {
+          beams.splice(i, 1);
+          continue;
+        }
+
+        const target = (b.owner === "player") ? ai : player;
+        if (!target.invincible && checkBeamCollision(b, target)) {
+          target.hp -= 20;
+        }
+      }
+    }
+
+    function clampPosition(god) {
+      god.x = clamp(god.x, god.radius, canvas.width - god.radius);
+      god.y = clamp(god.y, god.radius, canvas.height - god.radius);
+    }
+
+    // Draw gods
+    function drawGod(god) {
+      ctx.fillStyle = god.color;
+      ctx.beginPath();
+      ctx.arc(god.x, god.y, god.radius, 0, Math.PI * 2);
+      ctx.fill();
+
+      // HP bar above god
+      ctx.fillStyle = "grey";
+      ctx.fillRect(god.x - 30, god.y - god.radius - 20, 60, 6);
+      ctx.fillStyle = god.color;
+      ctx.fillRect(god.x - 30, god.y - god.radius - 20, 60 * god.hp / 1000, 6);
+
+      if (god.invincible) {
+        ctx.strokeStyle = "yellow";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(god.x, god.y, god.radius + 5, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+
+    function drawProjectiles() {
+      for (const p of projectiles) {
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    function drawBeams() {
+      for (const b of beams) {
+        ctx.strokeStyle = b.color;
+        ctx.lineWidth = b.width;
+        ctx.beginPath();
+        ctx.moveTo(b.x, b.y);
+        ctx.lineTo(b.x + Math.cos(b.angle) * b.length, b.y + Math.sin(b.angle) * b.length);
+        ctx.stroke();
+      }
+    }
+
+    // Main game loop
+    function loop() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      movePlayer();
+
+      if (mouse.left) {
+        if (!player.lastShot || performance.now() - player.lastShot > 50) {
+          shootPlayerProjectile();
+          player.lastShot = performance.now();
+        }
+      }
+
+      if (mouse.right) {
+        if (!playerBeamActive) {
+          playerBeamActive = true;
+          playerBeam = {
+            x: player.x,
+            y: player.y,
+            angle: Math.atan2(mouse.y - player.y, mouse.x - player.x),
+            length: BEAM_LENGTH,
+            width: BEAM_WIDTH,
+            color: "cyan",
+            owner: "player",
+            duration: 20,
+          };
+          beams.push(playerBeam);
+        }
+      } else {
+        if (playerBeamActive) {
+          playerBeamActive = false;
+          const index = beams.indexOf(playerBeam);
+          if (index >= 0) beams.splice(index, 1);
+          playerBeam = null;
+        }
+      }
+
+      moveAI();
+
+      updateProjectiles();
+      updateBeams();
+
+      drawGod(player);
+      drawGod(ai);
+      drawProjectiles();
+      drawBeams();
+
+      // No AI playstyle or top bars as requested
+
+      if (player.hp <= 0 || ai.hp <= 0) {
+        ctx.fillStyle = "white";
+        ctx.font = "48px Arial";
+        ctx.textAlign = "center";
+        ctx.fillText(player.hp <= 0 ? "AI Wins!" : "Player Wins!", canvas.width / 2, canvas.height / 2);
+        return;
+      }
+
+      requestAnimationFrame(loop);
+    }
+
+    loop();
+  </script>
+</body>
+</html>
