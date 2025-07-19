@@ -1,1 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Pac-Man</title>
+  <style>
+    body {
+      background: black;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      color: yellow;
+      font-family: sans-serif;
+      flex-direction: column;
+    }
+    #game {
+      display: grid;
+      grid-template-columns: repeat(20, 25px);
+      grid-template-rows: repeat(20, 25px);
+    }
+    .wall {
+      background: blue;
+    }
+    .pacman {
+      background: yellow;
+      border-radius: 50%;
+    }
+    .ghost {
+      border-radius: 50%;
+    }
+    .ghost.red { background: red; }
+    .ghost.pink { background: pink; }
+    .ghost.cyan { background: cyan; }
+    .ghost.orange { background: orange; }
+    .dot {
+      background: white;
+      border-radius: 50%;
+      width: 8px;
+      height: 8px;
+      margin: auto;
+    }
+    .cell {
+      width: 25px;
+      height: 25px;
+      box-sizing: border-box;
+      position: relative;
+    }
+    #score {
+      margin-bottom: 10px;
+      font-size: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div id="score">Score: 0 | Lives: 3 | Level: 1</div>
+  <div id="game"></div>
 
+  <script>
+    const layout = [
+      1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+      1,0,0,0,0,0,0,1,0,0,0,0,0,1,0,0,0,0,0,1,
+      1,0,1,1,1,0,0,1,1,1,0,1,1,1,0,0,1,1,0,1,
+      1,0,0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0,0,1,
+      1,1,1,1,1,0,1,1,1,0,1,1,1,1,1,0,1,1,1,1,
+      1,0,0,0,1,0,0,0,0,0,0,0,0,0,1,0,0,0,0,1,
+      1,0,1,0,1,1,1,1,0,1,0,1,1,1,1,0,1,0,1,1,
+      1,0,1,0,0,0,0,1,0,1,0,1,0,0,0,0,1,0,0,1,
+      1,0,1,1,1,1,0,1,0,1,0,1,0,1,1,1,1,0,1,1,
+      1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,
+      1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
+    ];
+
+    const width = 20;
+    const game = document.getElementById('game');
+    const scoreDisplay = document.getElementById('score');
+    let score = 0;
+    let level = 1;
+    let lives = 3;
+    let pacmanIndex = 21;
+    const ghostData = [
+      { index: 188, class: 'red' },
+      { index: 169, class: 'pink' },
+      { index: 230, class: 'cyan' },
+      { index: 147, class: 'orange' }
+    ];
+
+    function createBoard() {
+      game.innerHTML = '';
+      layout.forEach((type, i) => {
+        const cell = document.createElement('div');
+        cell.classList.add('cell');
+        if (type === 1) cell.classList.add('wall');
+        if (type === 0) cell.innerHTML = '<div class="dot"></div>';
+        game.appendChild(cell);
+      });
+      document.querySelectorAll('.cell')[pacmanIndex].classList.add('pacman');
+      ghostData.forEach(g => {
+        if (g.index >= 0 && g.index < width * width) {
+          document.querySelectorAll('.cell')[g.index].classList.add('ghost', g.class);
+        }
+      });
+    }
+
+    function movePacman(e) {
+      const cells = document.querySelectorAll('.cell');
+      cells[pacmanIndex].classList.remove('pacman');
+      let nextIndex = pacmanIndex;
+
+      if (e.key === 'ArrowLeft' && pacmanIndex % width !== 0 && !cells[pacmanIndex - 1].classList.contains(
