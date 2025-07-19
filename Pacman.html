@@ -4,24 +4,23 @@
   <meta charset="UTF-8">
   <title>Pac-Man</title>
   <style>
-    html, body {
-      margin: 0;
-      padding: 0;
-    }
     body {
       background: black;
+      margin: 0;
+      padding: 0;
       display: flex;
-      justify-content: center;
+      flex-direction: column;
       align-items: center;
-      height: 100vh;
       color: yellow;
       font-family: sans-serif;
-      flex-direction: column;
+    }
+    #stats {
+      margin: 10px;
     }
     #game {
       display: grid;
-      grid-template-columns: repeat(20, 25px);
-      grid-template-rows: repeat(11, 25px);
+      grid-template-columns: repeat(40, 20px);
+      grid-template-rows: repeat(30, 20px);
     }
     .wall {
       background: blue;
@@ -30,67 +29,59 @@
       background: yellow;
       border-radius: 50%;
     }
-    .ghost {
-      border-radius: 50%;
-    }
-    .ghost.red { background: red; }
-    .ghost.pink { background: pink; }
-    .ghost.cyan { background: cyan; }
-    .ghost.orange { background: orange; }
     .dot {
       background: white;
       border-radius: 50%;
-      width: 8px;
-      height: 8px;
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
+      width: 6px;
+      height: 6px;
+      margin: auto;
     }
     .cell {
-      width: 25px;
-      height: 25px;
+      width: 20px;
+      height: 20px;
       box-sizing: border-box;
-      position: relative;
     }
-    #score {
-      margin-bottom: 10px;
-      font-size: 20px;
+    .ghost {
+      border-radius: 50%;
     }
+    .red { background: red; }
+    .pink { background: pink; }
+    .cyan { background: cyan; }
+    .orange { background: orange; }
   </style>
 </head>
 <body>
-  <div id="score">Score: 0 | Lives: 3 | Level: 1</div>
+  <div id="stats">
+    Score: <span id="score">0</span> |
+    Lives: <span id="lives">3</span> |
+    Level: <span id="level">1</span>
+  </div>
   <div id="game"></div>
-
   <script>
-    const layout = [
-      1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
-      1,0,0,0,0,0,0,1,0,0,0,0,0,1,0,0,0,0,0,1,
-      1,0,1,1,1,0,0,1,1,1,0,1,1,1,0,0,1,1,0,1,
-      1,0,0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0,0,1,
-      1,1,1,1,1,0,1,1,1,0,1,1,1,1,1,0,1,1,1,1,
-      1,0,0,0,1,0,0,0,0,0,0,0,0,0,1,0,0,0,0,1,
-      1,0,1,0,1,1,1,1,0,1,0,1,1,1,1,0,1,0,1,1,
-      1,0,1,0,0,0,0,1,0,1,0,1,0,0,0,0,1,0,0,1,
-      1,0,1,1,1,1,0,1,0,1,0,1,0,1,1,1,1,0,1,1,
-      1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,
-      1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
-    ];
-
-    const width = 20;
     const game = document.getElementById('game');
     const scoreDisplay = document.getElementById('score');
+    const livesDisplay = document.getElementById('lives');
+    const levelDisplay = document.getElementById('level');
+    const width = 40;
+    const height = 30;
+    const layout = new Array(width * height).fill(0);
+
+    // Randomly generate a complex map (simple pattern for now)
+    for (let i = 0; i < layout.length; i++) {
+      const row = Math.floor(i / width);
+      const col = i % width;
+      if (row === 0 || col === 0 || row === height - 1 || col === width - 1 || (row % 4 === 0 && col % 3 === 0)) {
+        layout[i] = 1; // wall
+      } else {
+        layout[i] = 0; // dot
+      }
+    }
+
+    let pacmanIndex = width + 1;
+    let ghosts = [];
     let score = 0;
-    let level = 1;
     let lives = 3;
-    let pacmanIndex = 21;
-    const ghostData = [
-      { index: 188, class: 'red' },
-      { index: 169, class: 'pink' },
-      { index: 230, class: 'cyan' },
-      { index: 147, class: 'orange' }
-    ];
+    let level = 1;
 
     function createBoard() {
       game.innerHTML = '';
@@ -98,114 +89,101 @@
         const cell = document.createElement('div');
         cell.classList.add('cell');
         if (type === 1) cell.classList.add('wall');
-        if (type === 0) cell.innerHTML = '<div class="dot"></div>';
+        else cell.innerHTML = '<div class="dot"></div>';
         game.appendChild(cell);
       });
-      updateCharacters();
+      document.querySelectorAll('.cell')[pacmanIndex].classList.add('pacman');
     }
 
-    function updateCharacters() {
-      const cells = document.querySelectorAll('.cell');
-      if (cells[pacmanIndex]) cells[pacmanIndex].classList.add('pacman');
-      ghostData.forEach(g => {
-        if (cells[g.index]) {
-          cells[g.index].classList.add('ghost', g.class);
+    function drawGhosts() {
+      ghosts.forEach(g => {
+        if (g.index >= 0 && g.index < width * height) {
+          const cell = document.querySelectorAll('.cell')[g.index];
+          if (cell) cell.classList.add('ghost', g.class);
         }
+      });
+    }
+
+    function removeGhosts() {
+      document.querySelectorAll('.ghost').forEach(cell => {
+        cell.className = 'cell';
       });
     }
 
     function movePacman(e) {
       const cells = document.querySelectorAll('.cell');
-      if (!cells[pacmanIndex]) return;
       cells[pacmanIndex].classList.remove('pacman');
-      let nextIndex = pacmanIndex;
+      let next = pacmanIndex;
+      if (e.key === 'ArrowLeft' && pacmanIndex % width !== 0 && !cells[pacmanIndex - 1].classList.contains('wall')) next--;
+      else if (e.key === 'ArrowRight' && pacmanIndex % width < width - 1 && !cells[pacmanIndex + 1].classList.contains('wall')) next++;
+      else if (e.key === 'ArrowUp' && pacmanIndex - width >= 0 && !cells[pacmanIndex - width].classList.contains('wall')) next -= width;
+      else if (e.key === 'ArrowDown' && pacmanIndex + width < width * height && !cells[pacmanIndex + width].classList.contains('wall')) next += width;
 
-      if (e.key === 'ArrowLeft' && pacmanIndex % width !== 0 && !cells[pacmanIndex - 1].classList.contains('wall'))
-        nextIndex = pacmanIndex - 1;
-      else if (e.key === 'ArrowRight' && pacmanIndex % width < width - 1 && !cells[pacmanIndex + 1].classList.contains('wall'))
-        nextIndex = pacmanIndex + 1;
-      else if (e.key === 'ArrowUp' && pacmanIndex - width >= 0 && !cells[pacmanIndex - width].classList.contains('wall'))
-        nextIndex = pacmanIndex - width;
-      else if (e.key === 'ArrowDown' && pacmanIndex + width < layout.length && !cells[pacmanIndex + width].classList.contains('wall'))
-        nextIndex = pacmanIndex + width;
-
-      pacmanIndex = nextIndex;
-      if (cells[pacmanIndex]) {
-        const dot = cells[pacmanIndex].querySelector('.dot');
-        if (dot) {
-          dot.remove();
-          score += 10;
-          scoreDisplay.textContent = `Score: ${score} | Lives: ${lives} | Level: ${level}`;
-          if (!document.querySelector('.dot')) {
-            level++;
-            score += 100;
-            resetLevel();
-          }
-        }
-
-        if (isGhost(pacmanIndex)) loseLife();
-
-        cells[pacmanIndex].classList.add('pacman');
+      pacmanIndex = next;
+      const dot = cells[pacmanIndex].querySelector('.dot');
+      if (dot) {
+        dot.remove();
+        score += 10;
+        scoreDisplay.textContent = score;
       }
+      if (!document.querySelector('.dot')) nextLevel();
+      if (ghosts.some(g => g.index === pacmanIndex)) loseLife();
+      cells[pacmanIndex].classList.add('pacman');
     }
 
-    function isGhost(index) {
-      return ghostData.some(g => g.index === index);
-    }
-
-    function moveGhosts() {
-      const cells = document.querySelectorAll('.cell');
-      ghostData.forEach(g => {
-        if (cells[g.index]) {
-          cells[g.index].classList.remove('ghost', g.class);
-        }
-
-        const directions = [-1, 1, -width, width];
-        const shuffled = directions.sort(() => 0.5 - Math.random());
-        for (let dir of shuffled) {
-          const next = g.index + dir;
-          if (
-            next >= 0 &&
-            next < layout.length &&
-            !cells[next].classList.contains('wall') &&
-            !cells[next].classList.contains('ghost')
-          ) {
-            g.index = next;
-            break;
-          }
-        }
-
-        if (cells[g.index]) {
-          cells[g.index].classList.add('ghost', g.class);
-          if (g.index === pacmanIndex) loseLife();
-        }
-      });
+    function nextLevel() {
+      level++;
+      levelDisplay.textContent = level;
+      pacmanIndex = width + 1;
+      createBoard();
+      setupGhosts();
     }
 
     function loseLife() {
       lives--;
-      if (lives <= 0) {
-        alert('Game Over!');
-        location.reload();
-      } else {
-        alert(`You lost a life! Lives left: ${lives}`);
-        resetLevel();
+      livesDisplay.textContent = lives;
+      if (lives === 0) {
+        alert("Game Over");
+        lives = 3;
+        score = 0;
+        level = 1;
+        scoreDisplay.textContent = score;
+        levelDisplay.textContent = level;
       }
-    }
-
-    function resetLevel() {
-      pacmanIndex = 21;
-      ghostData[0].index = 188;
-      ghostData[1].index = 169;
-      ghostData[2].index = 230;
-      ghostData[3].index = 147;
-      scoreDisplay.textContent = `Score: ${score} | Lives: ${lives} | Level: ${level}`;
+      pacmanIndex = width + 1;
       createBoard();
+      setupGhosts();
     }
 
-    document.addEventListener('keydown', movePacman);
+    function setupGhosts() {
+      ghosts = [
+        { index: width * 2 + 2, class: 'red' },
+        { index: width * 2 + 37, class: 'pink' },
+        { index: width * 27 + 2, class: 'cyan' },
+        { index: width * 27 + 37, class: 'orange' }
+      ];
+    }
+
+    function moveGhosts() {
+      const cells = document.querySelectorAll('.cell');
+      ghosts.forEach(ghost => {
+        const directions = [-1, 1, -width, width];
+        const next = ghost.index + directions[Math.floor(Math.random() * 4)];
+        if (next >= 0 && next < width * height && !cells[next].classList.contains('wall')) {
+          ghost.index = next;
+        }
+      });
+      if (ghosts.some(g => g.index === pacmanIndex)) loseLife();
+    }
+
     createBoard();
-    setInterval(moveGhosts, 500);
+    setupGhosts();
+    document.addEventListener('keydown', movePacman);
+    setInterval(() => {
+      removeGhosts();
+      moveGhosts();
+      drawGhosts();
+    }, 400);
   </script>
 </body>
 </html>
