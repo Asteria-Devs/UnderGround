@@ -64,16 +64,34 @@
     const levelDisplay = document.getElementById('level');
     const width = 40;
     const height = 30;
-    const layout = new Array(width * height).fill(0);
 
-    // Randomly generate a complex map (simple pattern for now)
-    for (let i = 0; i < layout.length; i++) {
-      const row = Math.floor(i / width);
-      const col = i % width;
-      if (row === 0 || col === 0 || row === height - 1 || col === width - 1 || (row % 4 === 0 && col % 3 === 0)) {
-        layout[i] = 1; // wall
-      } else {
-        layout[i] = 0; // dot
+    // Maze layout using 0 (dot), 1 (wall)
+    const mazePattern = [
+      "1111111111111111111111111111111111111111",
+      "1000000000110000000000001100000000000001",
+      "1011111110110111111111011011111111111101",
+      "1000000000000000000000000000000000000001",
+      "1011111011111011111101111011111011111101",
+      "1000001000000000000000000000001000000001",
+      "1111111011111110111110111111011011111101",
+      "1000000000000000000000000000000000000001",
+      "1011111011111011111101111011111011111101",
+      "1000001000000000000000000000001000000001",
+      "1111111011111110111110111111011011111101",
+      "1000000000000000000000000000000000000001",
+      "1011111110110111111111011011111111111101",
+      "1000000000110000000000001100000000000001",
+      "1111111111111111111111111111111111111111",
+    ];
+
+    const layout = [];
+    for (let row = 0; row < height; row++) {
+      for (let col = 0; col < width; col++) {
+        if (row < mazePattern.length && col < mazePattern[row].length) {
+          layout.push(+mazePattern[row][col]);
+        } else {
+          layout.push(1); // Fill empty space with walls
+        }
       }
     }
 
@@ -157,10 +175,10 @@
 
     function setupGhosts() {
       ghosts = [
-        { index: width * 2 + 2, class: 'red' },
-        { index: width * 2 + 37, class: 'pink' },
-        { index: width * 27 + 2, class: 'cyan' },
-        { index: width * 27 + 37, class: 'orange' }
+        { index: width * 1 + 1, class: 'red' },
+        { index: width * 1 + width - 2, class: 'pink' },
+        { index: width * (height - 2) + 1, class: 'cyan' },
+        { index: width * (height - 2) + width - 2, class: 'orange' }
       ];
     }
 
